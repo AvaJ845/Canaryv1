@@ -1,3 +1,4 @@
+#app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -25,9 +26,9 @@ Data is sourced from Yahoo Finance API.
 st.sidebar.header("User Input Parameters")
 
 # Default tickers
-default_stocks = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META']
-default_etfs = ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI']
-default_dividend_stocks = ['JNJ', 'PG', 'KO', 'XOM', 'VZ']
+default_stocks = ['COST', 'NVDA', 'PFE', 'NFLX', 'AMD', 'SHOP', 'NOV', 'TSM', 'LLY']
+default_etfs = ['SDIV', 'PSEC', 'CLM', 'VOO', 'BRK-B', 'FXAIX', 'JEPI']
+default_dividend_stocks = ['HD', 'MAIN', 'MO', 'MMM', 'DUK', 'ABBV', 'O', 'PBA', 'HON', 'XOM', 'SBUX', 'SOLV', 'O']
 
 # User input for custom tickers
 st.sidebar.subheader("Add Custom Tickers")
