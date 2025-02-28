@@ -271,6 +271,20 @@ def build_price_prediction_model(ticker, prediction_days=7):
         'accuracy': accuracy,
         'feature_importance': feature_importance
     }
+    # Calculate accuracy metrics
+    y_pred_test = model.predict(X_test_scaled)
+    mse = np.mean((y_pred_test - y_test) ** 2)
+    accuracy = 1 - np.mean(np.abs((y_test - y_pred_test) / y_test))
+    
+    # Prepare dates for visualization
+    last_date = features_df.index[-1]
+    future_dates = [last_date + timedelta(days=i) for i in range(prediction_days + 1)]
+    
+    return predictions, future_dates, {
+        'mse': mse,
+        'accuracy': accuracy,
+        'feature_importance': feature_importance
+    }
 
 # Data interval selection
 intervals = {
@@ -306,6 +320,283 @@ def fetch_stock_data(tickers, period, interval):
         except Exception as e:
             st.warning(f"Error fetching data for {ticker}: {e}")
     return data
+
+# Fetch more data for prediction models
+@st.cache_data(ttl=300)  # Cache data for 5 minutes
+def fetch_prediction_data(ticker):
+    try:
+        # Get 2 years of data for better model training
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="2y", interval="1d")
+        if not hist.empty:
+            return hist
+    except Exception as e:
+        st.warning(f"Error fetching prediction data for {ticker}: {e}")
+    return None
+
+# Function to create prediction model features
+def create_features(data):
+    # Create a copy to avoid modifying the original DataFrame
+    df = data.copy()
+    
+    # Technical indicators as features
+    
+    # Moving Averages
+    df['MA5'] = df['Close'].rolling(window=5).mean()
+    df['MA10'] = df['Close'].rolling(window=10).mean()
+    df['MA20'] = df['Close'].rolling(window=20).mean()
+    
+    # MACD
+    df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+    df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = df['EMA12'] - df['EMA26']
+    df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    
+    # Bollinger Bands
+    df['20MA'] = df['Close'].rolling(window=20).mean()
+    df['20STD'] = df['Close'].rolling(window=20).std()
+    df['Upper_Band'] = df['20MA'] + (df['20STD'] * 2)
+    df['Lower_Band'] = df['20MA'] - (df['20STD'] * 2)
+    df['BB_Width'] = (df['Upper_Band'] - df['Lower_Band']) / df['20MA']
+    
+    # Relative Strength Index (RSI)
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=14).mean()
+    avg_loss = loss.rolling(window=14).mean()
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # Rate of Change (ROC)
+    df['ROC'] = df['Close'].pct_change(periods=10) * 100
+    
+    # Average Directional Index (ADX)
+    # Simplified calculation
+    high_low = df['High'] - df['Low']
+    high_close = abs(df['High'] - df['Close'].shift())
+    low_close = abs(df['Low'] - df['Close'].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = ranges.max(axis=1)
+    df['ATR'] = true_range.rolling(14).mean()
+    
+    # Volume metrics
+    df['Volume_ROC'] = df['Volume'].pct_change(periods=1) * 100
+    df['Volume_MA5'] = df['Volume'].rolling(window=5).mean()
+    df['Volume_Ratio'] = df['Volume'] / df['Volume_MA5']
+    
+    # Price change features
+    df['Price_Change'] = df['Close'].pct_change() * 100
+    df['Price_Change_5D'] = df['Close'].pct_change(periods=5) * 100
+    
+    # Day of week (0=Monday, 6=Sunday)
+    df['Day_of_Week'] = pd.to_datetime(df.index).dayofweek
+    
+    # Target: Next day's closing price
+    df['Target'] = df['Close'].shift(-1)
+    
+    # Drop NaN values
+    df = df.dropna()
+    
+    return df
+
+# Function to build and train price prediction model
+def build_price_prediction_model(ticker, prediction_days=7):
+    # Fetch data
+    data = fetch_prediction_data(ticker)
+    if data is None or data.empty:
+        return None, None, None
+    
+    # Create features
+    features_df = create_features(data)
+    if len(features_df) < 100:  # Not enough data
+        return None, None, None
+    
+    # Prepare features and target
+    feature_columns = [
+        'MA5', 'MA10', 'MA20', 'MACD', 'MACD_Signal', 
+        'BB_Width', 'RSI', 'ROC', 'ATR', 
+        'Volume_ROC', 'Volume_Ratio', 
+        'Price_Change', 'Price_Change_5D', 'Day_of_Week'
+    ]
+    
+    X = features_df[feature_columns].values
+    y = features_df['Target'].values
+    
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Scale features
+    scaler = MinMaxScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Create and train model
+    if model_type == "Linear Regression":
+        model = LinearRegression()
+    else:  # Random Forest
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+    
+    model.fit(X_train_scaled, y_train)
+    
+    # Get latest feature values for prediction
+    latest_features = features_df[feature_columns].iloc[-1].values.reshape(1, -1)
+    latest_features_scaled = scaler.transform(latest_features)
+    
+    # Generate predictions for future days
+    predictions = []
+    latest_price = features_df['Close'].iloc[-1]
+    current_features = latest_features_scaled.copy()
+    
+    # For visualization, include the last known price
+    predictions.append(latest_price)
+    
+    for i in range(prediction_days):
+        # Predict next price
+        next_price = model.predict(current_features)[0]
+        predictions.append(next_price)
+        
+        # Update features for next prediction (simplified approach)
+        # In a real application, you would need to update all features
+        # This is a simplified version that just updates price-related features
+        price_change = ((next_price / latest_price) - 1) * 100
+        current_features[0][feature_columns.index('Price_Change')] = price_change
+        
+        # Update latest price for next iteration
+        latest_price = next_price
+    
+    # Feature importance (for Random Forest)
+    feature_importance = None
+    if model_type == "Random Forest":
+        feature_importance = dict(zip(feature_columns, model.feature_importances_))
+    
+    # Calculate accuracy metrics
+    y_pred_test = model.predict(X_test_scaled)
+    mse = np.mean((y_pred_test - y_test) ** 2)
+    accuracy = 1 - np.mean(np.abs((y_test - y_pred_test) / y_test))
+    
+    # Prepare dates for visualization
+    last_date = features_df.index[-1]
+    future_dates = [last_date + timedelta(days=i) for i in range(prediction_days + 1)]
+    
+    return predictions, future_dates, {
+        'mse': mse,
+        'accuracy': accuracy,
+        'feature_importance': feature_importance
+    }
+
+# Function to render price prediction
+def render_price_prediction(ticker, ticker_tab):
+    with ticker_tab:
+        st.subheader(f"Price Prediction ({prediction_days} days)")
+        
+        # Build prediction model
+        with st.spinner(f"Building {model_type} model for {ticker}..."):
+            predictions, future_dates, model_metrics = build_price_prediction_model(ticker, prediction_days)
+        
+        if predictions is None:
+            st.warning(f"Insufficient data to build prediction model for {ticker}")
+            return
+        
+        # Display model metrics
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Model Accuracy", f"{model_metrics['accuracy']*100:.2f}%", key=f"accuracy_metric_{ticker}")
+        with col2:
+            st.metric("Mean Squared Error", f"{model_metrics['mse']:.4f}", key=f"mse_metric_{ticker}")
+        
+        # Display feature importance if available
+        if show_feature_importance and model_metrics['feature_importance'] is not None:
+            st.subheader("Feature Importance")
+            
+            # Sort feature importance
+            sorted_importance = sorted(
+                model_metrics['feature_importance'].items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )
+            
+            # Plot feature importance
+            fig = px.bar(
+                x=[item[1] for item in sorted_importance],
+                y=[item[0] for item in sorted_importance],
+                orientation='h',
+                labels={'x': 'Importance', 'y': 'Feature'},
+                title="Feature Importance"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Plot predictions
+        st.subheader("Price Prediction Chart")
+        
+        # Get historical data for comparison
+        hist_data = fetch_prediction_data(ticker)
+        if hist_data is not None:
+            # Show last 30 days and predictions
+            recent_data = hist_data.iloc[-30:]['Close']
+            
+            # Create plot
+            fig = go.Figure()
+            
+            # Add historical prices
+            fig.add_trace(go.Scatter(
+                x=recent_data.index,
+                y=recent_data.values,
+                mode='lines',
+                name='Historical',
+                line=dict(color='blue')
+            ))
+            
+            # Add predictions
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=predictions,
+                mode='lines+markers',
+                name='Predicted',
+                line=dict(color='red', dash='dash')
+            ))
+            
+            # Add confidence interval (simple approximation)
+            upper_bound = [price * (1 + model_metrics['mse'] * 0.5) for price in predictions]
+            lower_bound = [price * (1 - model_metrics['mse'] * 0.5) for price in predictions]
+            
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=upper_bound,
+                mode='lines',
+                line=dict(width=0),
+                showlegend=False
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=lower_bound,
+                mode='lines',
+                line=dict(width=0),
+                fill='tonexty',
+                fillcolor='rgba(255, 0, 0, 0.2)',
+                name='Confidence Interval'
+            ))
+            
+            # Update layout
+            fig.update_layout(
+                title=f"{ticker} Price Prediction",
+                xaxis_title="Date",
+                yaxis_title="Price ($)",
+                hovermode="x unified"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display prediction data in table format
+            prediction_df = pd.DataFrame({
+                'Date': future_dates,
+                'Predicted Price': [f"${price:.2f}" for price in predictions],
+                'Lower Bound': [f"${price:.2f}" for price in lower_bound],
+                'Upper Bound': [f"${price:.2f}" for price in upper_bound]
+            })
+            
+            st.dataframe(prediction_df, key=f"prediction_df_{ticker}")
 
 # Function to calculate key metrics and statistics
 def calculate_metrics(stock_data, ticker_type=None):
@@ -802,55 +1093,7 @@ def correlation_analysis(stock_data):
     else:
         st.info("Insufficient data for correlation analysis. Please add more tickers or extend the time period.")
 
-# Function to analyze dividend stocks
-def analyze_dividend_stocks(metrics):
-    st.header("Dividend Analysis")
-    
-    # Filter out only dividend stocks with valid dividend data
-    dividend_data = {}
-    for ticker, metric in metrics.items():
-        if ticker in dividend_stocks_list and metric['dividend_yield'] is not None:
-            dividend_data[ticker] = {
-                'Yield': metric['dividend_yield'],
-                'Payout Ratio': metric['dividend_payout'] if metric['dividend_payout'] else 0,
-                'Price': metric['current_price'],
-                'Trend': metric['trend']
-            }
-    
-    if dividend_data:
-        # Create dataframe
-        df = pd.DataFrame(dividend_data).T
-        df = df.sort_values('Yield', ascending=False)
-        
-        # Plot dividend yields
-        st.subheader("Dividend Yields Comparison")
-        fig = px.bar(
-            df.reset_index(), 
-            x='index', 
-            y='Yield',
-            color='Yield',
-            labels={'index': 'Ticker', 'Yield': 'Dividend Yield (%)'},
-            title="Dividend Yields by Stock",
-            color_continuous_scale='Viridis'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Display dividend data table
-        st.subheader("Dividend Stocks Comparison")
-        st.dataframe(df.style.background_gradient(subset=['Yield'], cmap='YlGn'))
-    else:
-        st.info("No dividend information available for the selected stocks.")
-
-# Main app logic
-def main():
-    # Fetch stock data
-    with st.spinner("Fetching data from Yahoo Finance..."):
-        stock_data = fetch_stock_data(tickers, time_periods[selected_period], intervals[selected_interval])
-    
-    # Check if we have data
-    if not stock_data:
-        st.error("No data available for the selected tickers and time period. Please try different selections.")
-        return
+None
     
     # Calculate metrics
     metrics = calculate_metrics(stock_data)
