@@ -65,6 +65,48 @@ dividend_stocks_list = list(dict.fromkeys(dividend_stocks_list))
 # Combine all tickers for data fetching
 tickers = stocks_list + etfs_list + dividend_stocks_list
 
+# Time period selection
+time_periods = {
+    "1 Day": "1d",
+    "5 Days": "5d",
+    "1 Month": "1mo",
+    "3 Months": "3mo",
+    "6 Months": "6mo",
+    "1 Year": "1y",
+    "2 Years": "2y",
+    "5 Years": "5y"
+}
+selected_period = st.sidebar.selectbox("Select Time Period", list(time_periods.keys()))
+
+# Data interval selection
+intervals = {
+    "1 Minute": "1m",
+    "5 Minutes": "5m",
+    "15 Minutes": "15m",
+    "30 Minutes": "30m",
+    "1 Hour": "1h",
+    "1 Day": "1d",
+    "1 Week": "1wk",
+    "1 Month": "1mo"
+}
+selected_interval = st.sidebar.selectbox("Select Data Interval", list(intervals.keys()))
+
+# Prediction model settings
+st.sidebar.subheader("Price Prediction Settings")
+prediction_days = st.sidebar.slider("Prediction Horizon (Days)", 1, 30, 7)
+model_type = st.sidebar.selectbox(
+    "Prediction Model Type",
+    ["Linear Regression", "Random Forest"]
+)
+
+# Significance threshold for highlighting changes
+significance_threshold = st.sidebar.slider("Significance Threshold (%)", 1.0, 10.0, 3.0, 0.1)
+
+# Feature importance flag (for Random Forest only)
+show_feature_importance = False
+if model_type == "Random Forest":
+    show_feature_importance = st.sidebar.checkbox("Show Feature Importance", value=True)
+
 # Fetch more data for prediction models
 @st.cache_data(ttl=300)  # Cache data for 5 minutes
 def fetch_prediction_data(ticker):
