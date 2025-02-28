@@ -37,9 +37,9 @@ default_dividend_stocks = ['HD', 'MAIN', 'MO', 'MMM', 'DUK', 'ABBV', 'O', 'PBA',
 
 # User input for custom tickers
 st.sidebar.subheader("Add Custom Tickers")
-custom_stocks = st.sidebar.text_input("Add custom stocks (comma-separated)", "")
-custom_etfs = st.sidebar.text_input("Add custom ETFs (comma-separated)", "")
-custom_dividend_stocks = st.sidebar.text_input("Add custom dividend stocks (comma-separated)", "")
+custom_stocks = st.sidebar.text_input("Add custom stocks (comma-separated)", "", key="custom_stocks_input")
+custom_etfs = st.sidebar.text_input("Add custom ETFs (comma-separated)", "", key="custom_etfs_input")
+custom_dividend_stocks = st.sidebar.text_input("Add custom dividend stocks (comma-separated)", "", key="custom_dividend_stocks_input")
 
 # Process user inputs
 if custom_stocks:
@@ -76,7 +76,7 @@ time_periods = {
     "2 Years": "2y",
     "5 Years": "5y"
 }
-selected_period = st.sidebar.selectbox("Select Time Period", list(time_periods.keys()))
+selected_period = st.sidebar.selectbox("Select Time Period", list(time_periods.keys()), key="time_period_select")
 
 # Data interval selection
 intervals = {
@@ -89,23 +89,24 @@ intervals = {
     "1 Week": "1wk",
     "1 Month": "1mo"
 }
-selected_interval = st.sidebar.selectbox("Select Data Interval", list(intervals.keys()))
+selected_interval = st.sidebar.selectbox("Select Data Interval", list(intervals.keys()), key="interval_select")
 
 # Prediction model settings
 st.sidebar.subheader("Price Prediction Settings")
-prediction_days = st.sidebar.slider("Prediction Horizon (Days)", 1, 30, 7)
+prediction_days = st.sidebar.slider("Prediction Horizon (Days)", 1, 30, 7, key="prediction_days_slider")
 model_type = st.sidebar.selectbox(
     "Prediction Model Type",
-    ["Linear Regression", "Random Forest"]
+    ["Linear Regression", "Random Forest"],
+    key="model_type_select"
 )
 
 # Significance threshold for highlighting changes
-significance_threshold = st.sidebar.slider("Significance Threshold (%)", 1.0, 10.0, 3.0, 0.1)
+significance_threshold = st.sidebar.slider("Significance Threshold (%)", 1.0, 10.0, 3.0, 0.1, key="significance_threshold_slider")
 
 # Feature importance flag (for Random Forest only)
 show_feature_importance = False
 if model_type == "Random Forest":
-    show_feature_importance = st.sidebar.checkbox("Show Feature Importance", value=True)
+    show_feature_importance = st.sidebar.checkbox("Show Feature Importance", value=True, key="feature_importance_checkbox")
 
 # Fetch more data for prediction models
 @st.cache_data(ttl=300)  # Cache data for 5 minutes
