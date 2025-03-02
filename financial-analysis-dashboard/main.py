@@ -4,6 +4,9 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime, timedelta
 
 # Import our custom modules
@@ -72,6 +75,10 @@ with st.sidebar:
     end_date = st.date_input("End Date", 
                             value=datetime.now(), 
                             max_value=datetime.now())
+                            
+    # Convert date inputs to datetime objects without timezone info
+    start_date = pd.Timestamp(start_date).to_pydatetime()
+    end_date = pd.Timestamp(end_date).to_pydatetime()
     
     # Forecast settings
     st.subheader("Forecast Settings")
@@ -155,8 +162,12 @@ with tabs[1]:
         
         if div_ticker:
             try:
+                # Convert date inputs to pandas Timestamp for yfinance compatibility
+                pd_start_date = pd.Timestamp(start_date)
+                pd_end_date = pd.Timestamp(end_date)
+                
                 # Get dividend data and analyze
-                div_data = get_dividend_data(div_ticker, start_date, end_date)
+                div_data = get_dividend_data(div_ticker, pd_start_date, pd_end_date)
                 
                 # Display basic dividend information
                 current_price = div_data['price']
@@ -231,8 +242,12 @@ with tabs[2]:
         
         if etf_ticker:
             try:
+                # Convert date inputs to pandas Timestamp for yfinance compatibility
+                pd_start_date = pd.Timestamp(start_date)
+                pd_end_date = pd.Timestamp(end_date)
+                
                 # Get ETF data and analyze
-                etf_data = get_etf_data(etf_ticker, start_date, end_date)
+                etf_data = get_etf_data(etf_ticker, pd_start_date, pd_end_date)
                 
                 # Display basic ETF information
                 current_price = etf_data['Close'].iloc[-1]
@@ -303,8 +318,12 @@ with tabs[3]:
     
     if crypto_ticker:
         try:
+            # Convert date inputs to pandas Timestamp for yfinance compatibility
+            pd_start_date = pd.Timestamp(start_date)
+            pd_end_date = pd.Timestamp(end_date)
+            
             # Get and analyze crypto data
-            crypto_data = get_crypto_data(crypto_ticker, start_date, end_date)
+            crypto_data = get_crypto_data(crypto_ticker, pd_start_date, pd_end_date)
             
             # Display basic crypto information
             crypto_info_col1, crypto_info_col2 = st.columns(2)
@@ -386,33 +405,103 @@ with tabs[4]:
     # Monthly income projection
     st.subheader("Monthly Income Projection")
     
-    # Create a dataframe with monthly income projections
-    monthly_income = pd.DataFrame({
-        'Month': pd.date_range(start=datetime.now(), periods=12, freq='M').strftime('%b %Y'),
-        'Projected Income': [portfolio_metrics['monthly_income']] * 12
-    })
+    try:
+        # Create a dataframe with monthly income projections
+        monthly_income = pd.DataFrame({
+            'Month': pd.date_range(start=datetime.now(), periods=12, freq='M').strftime('%b %Y'),
+            'Projected Income': [portfolio_metrics['monthly_income']] * 12
+        })
+        
+        # Display monthly income as a bar chart
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=monthly_income['Month'],
+            y=monthly_income['Projected Income'],
+            marker_color='green'
+        ))
+        
+        fig.update_layout(
+            title="Monthly Income Projection",
+            xaxis_title="Month",
+            yaxis_title="Income ($)",
+            yaxis_tickprefix="$"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Display annual summary
+        total_annual = monthly_income['Projected Income'].sum()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Projected Annual Income", f"${total_annual:,.2f}")
+        
+        with col2:
+            st.metric("Average Monthly Income", f"${portfolio_metrics['monthly_income']:,.2f}")
     
-    st.bar_chart(monthly_income.set_index('Month'))
+    except Exception as e:
+        st.error(f"Error displaying income projection: {str(e)}")
+        
+        # Simple fallback display
+        st.write(f"Estimated Monthly Income: ${portfolio_metrics['monthly_income']:,.2f}")
+        st.write(f"Estimated Annual Income: ${portfolio_metrics['annual_income']:,.2f}")
     
     # Display upcoming dividends
     st.subheader("Upcoming Dividend Payments")
-    upcoming_div = portfolio_data[portfolio_data['Amount Per Share'] > 0].copy()
-    upcoming_div['Pay Date'] = pd.to_datetime(upcoming_div['Pay-Date'])
-    upcoming_div = upcoming_div[upcoming_div['Pay Date'] >= datetime.now()]
-    upcoming_div = upcoming_div.sort_values('Pay Date')
-    
-    if not upcoming_div.empty:
-        for _, row in upcoming_div.iterrows():
-            st.markdown(f"""
-            <div class="metric-card">
-                <h3>{row['Symbol']} - {row['Description']}</h3>
-                <p>Pay Date: {row['Pay Date'].strftime('%b %d, %Y')}</p>
-                <p>Amount: ${row['Amount Per Share']:.2f} per share</p>
-                <p>Total Payment: ${row['Amount Per Share'] * row['Quantity']:.2f}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.write("No upcoming dividend payments found.")
+    try:
+        # Make a copy of the portfolio data for manipulation
+        upcoming_div = portfolio_data[portfolio_data['Amount Per Share'] > 0].copy()
+        
+        # Debug information
+        st.write(f"Total dividend-paying positions: {len(upcoming_div)}")
+        
+        # Convert 'Pay-Date' to datetime, handling potential errors
+        upcoming_div['Pay Date'] = pd.to_datetime(upcoming_div['Pay-Date'], errors='coerce')
+        
+        # Filter for upcoming payments and handle NaT values
+        current_date = pd.Timestamp(datetime.now().date())
+        upcoming_div = upcoming_div[upcoming_div['Pay Date'].notna()]
+        upcoming_div = upcoming_div[upcoming_div['Pay Date'] >= current_date]
+        upcoming_div = upcoming_div.sort_values('Pay Date')
+        
+        # Debug information
+        st.write(f"Upcoming dividend payments: {len(upcoming_div)}")
+        
+        # Display upcoming dividends
+        if not upcoming_div.empty:
+            for _, row in upcoming_div.iterrows():
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>{row['Symbol']} - {row['Description']}</h3>
+                    <p>Pay Date: {row['Pay Date'].strftime('%b %d, %Y')}</p>
+                    <p>Amount: ${row['Amount Per Share']:.2f} per share</p>
+                    <p>Total Payment: ${row['Amount Per Share'] * row['Quantity']:.2f}</p>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            # If no upcoming dividends, show all dividend payments for reference
+            st.write("No upcoming dividend payments found. Here are all dividend-paying positions:")
+            
+            all_div = portfolio_data[portfolio_data['Amount Per Share'] > 0].copy()
+            
+            for _, row in all_div.iterrows():
+                pay_date = row['Pay-Date'] if isinstance(row['Pay-Date'], str) else "N/A"
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>{row['Symbol']} - {row['Description']}</h3>
+                    <p>Pay Date: {pay_date}</p>
+                    <p>Amount: ${row['Amount Per Share']:.2f} per share</p>
+                    <p>Annual Income: ${row['Est. Annual Income']:.2f}</p>
+                </div>
+                """, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error displaying upcoming dividends: {str(e)}")
+        st.write("Here are all dividend stocks in your portfolio:")
+        
+        # Display all dividend stocks as a fallback
+        div_stocks = portfolio_data[portfolio_data['Amount Per Share'] > 0]
+        st.dataframe(div_stocks[['Symbol', 'Description', 'Quantity', 'Amount Per Share', 'Est. Annual Income']])
 
 # Footer
 st.markdown("""
@@ -422,5 +511,5 @@ This financial analysis dashboard allows you to track stocks, ETFs, dividend sto
 For dividend stocks, it provides a rating system based on yield, payout ratio, growth history, and more.
 You can forecast prices up to 90 days ahead and analyze your portfolio performance.
 
-\
+Developed with ❤️ AvaResearchLLC
 """)
