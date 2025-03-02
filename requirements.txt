@@ -3,7 +3,9 @@ streamlit
 pandas
 numpy
 yfinance
-plotly
 matplotlib
+plotly
 scikit-learn
-seaborn
+statsmodels
+prophet
+tensorflow
