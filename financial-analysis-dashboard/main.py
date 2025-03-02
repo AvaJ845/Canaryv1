@@ -422,5 +422,5 @@ This financial analysis dashboard allows you to track stocks, ETFs, dividend sto
 For dividend stocks, it provides a rating system based on yield, payout ratio, growth history, and more.
 You can forecast prices up to 90 days ahead and analyze your portfolio performance.
 
-Developed with ❤️ using Streamlit
+\
 """)
