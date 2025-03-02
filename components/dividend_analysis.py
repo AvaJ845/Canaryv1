@@ -13,17 +13,21 @@ def analyze_dividend_stocks(dividend_metrics):
     Args:
         dividend_metrics (dict): Dictionary of dividend stock metrics
     """
+    if not dividend_metrics:
+        st.info("No dividend data available.")
+        return
+        
     st.header("Dividend Analysis Overview")
     
     # Calculate and display average dividend yield
     yields = [metric['dividend_yield'] for ticker, metric in dividend_metrics.items() 
-              if metric['dividend_yield'] is not None]
+              if metric.get('dividend_yield') is not None]
     
     if yields:
         avg_yield = sum(yields) / len(yields)
         highest_yield = max(yields)
-        highest_yield_ticker = [ticker for ticker, metric in dividend_metrics.items() 
-                               if metric['dividend_yield'] == highest_yield][0]
+        highest_yield_ticker = next((ticker for ticker, metric in dividend_metrics.items() 
+                                    if metric.get('dividend_yield') == highest_yield), "Unknown")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -34,7 +38,7 @@ def analyze_dividend_stocks(dividend_metrics):
         # Create dividend yield comparison chart
         dividend_data = []
         for ticker, metric in dividend_metrics.items():
-            if metric['dividend_yield'] is not None:
+            if metric.get('dividend_yield') is not None:
                 dividend_data.append({
                     'Ticker': ticker,
                     'Dividend Yield (%)': metric['dividend_yield']
@@ -61,7 +65,7 @@ def analyze_dividend_stocks(dividend_metrics):
             # Display dividend payout ratios if available
             payout_data = []
             for ticker, metric in dividend_metrics.items():
-                if metric['dividend_payout'] is not None:
+                if metric.get('dividend_payout') is not None:
                     payout_data.append({
                         'Ticker': ticker,
                         'Payout Ratio (%)': metric['dividend_payout']
