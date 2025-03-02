@@ -134,9 +134,17 @@ def calculate_portfolio_metrics(portfolio_data):
     ytd_return = 8.5  # Example placeholder
     
     # Calculate upcoming dividends
-    today = datetime.now()
-    upcoming_dates = portfolio_data[portfolio_data['Pay-Date'] >= today].sort_values('Pay-Date')
-    upcoming_dividends = upcoming_dates.apply(lambda row: row['Amount Per Share'] * row['Quantity'], axis=1).sum()
+    try:
+        today = pd.Timestamp(datetime.now().date())
+        # Convert Pay-Date to datetime
+        portfolio_data['Pay Date'] = pd.to_datetime(portfolio_data['Pay-Date'], errors='coerce')
+        # Filter upcoming dates
+        upcoming_dates = portfolio_data[portfolio_data['Pay Date'] >= today].sort_values('Pay Date')
+        # Calculate upcoming payment amounts
+        upcoming_dividends = upcoming_dates.apply(lambda row: row['Amount Per Share'] * row['Quantity'], axis=1).sum()
+    except Exception as e:
+        # Default to 0 if there's an error
+        upcoming_dividends = 0
     
     # Return the metrics
     return {
@@ -176,6 +184,9 @@ def update_portfolio_prices(portfolio_data):
             
             # Get the latest price
             data = ticker.history(period='1d')
+            
+            # Reset timezone information
+            data.index = data.index.tz_localize(None)
             
             if not data.empty:
                 latest_price = data['Close'].iloc[-1]
@@ -257,6 +268,8 @@ def add_portfolio_position(portfolio_data, symbol, quantity, price=None):
             # Get the latest price if not provided
             if price is None:
                 data = ticker.history(period='1d')
+                # Reset timezone information
+                data.index = data.index.tz_localize(None)
                 if not data.empty:
                     price = data['Close'].iloc[-1]
                 else:
@@ -436,6 +449,8 @@ def get_portfolio_performance_history(portfolio_data, start_date, end_date):
         try:
             ticker = yf.Ticker(symbol)
             data = ticker.history(start=start_str, end=end_str)
+            # Reset timezone information
+            data.index = data.index.tz_localize(None)
             if not data.empty:
                 historical_data[symbol] = data['Close']
         except Exception as e:

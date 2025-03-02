@@ -29,6 +29,9 @@ def get_stock_data(ticker, start_date, end_date):
     stock = yf.Ticker(ticker)
     data = stock.history(start=start_str, end=end_str)
     
+    # Reset timezone information to prevent timezone comparison issues
+    data.index = data.index.tz_localize(None)
+    
     # If data is empty, raise an exception
     if data.empty:
         raise Exception(f"No data found for ticker {ticker}")

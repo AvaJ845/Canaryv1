@@ -33,6 +33,9 @@ def get_crypto_data(ticker, start_date, end_date):
     crypto = yf.Ticker(ticker)
     data = crypto.history(start=start_str, end=end_str)
     
+    # Reset timezone information to prevent timezone comparison issues
+    data.index = data.index.tz_localize(None)
+    
     # If data is empty, raise an exception
     if data.empty:
         raise Exception(f"No data found for crypto ticker {ticker}")

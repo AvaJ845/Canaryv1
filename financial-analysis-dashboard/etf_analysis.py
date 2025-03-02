@@ -26,6 +26,9 @@ def get_etf_data(ticker, start_date, end_date):
     etf = yf.Ticker(ticker)
     data = etf.history(start=start_str, end=end_str)
     
+    # Reset timezone information to prevent timezone comparison issues
+    data.index = data.index.tz_localize(None)
+    
     # If data is empty, raise an exception
     if data.empty:
         raise Exception(f"No data found for ETF ticker {ticker}")
